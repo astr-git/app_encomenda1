@@ -12,7 +12,14 @@ from dotenv import load_dotenv
 # --- CONFIGURACOES GERAIS ---
 st.set_page_config(page_title="PackFlow", page_icon="📦", layout="wide")
 
-st.markdown("""<style>.stApp {background-color: #ffffff;} .rodape {position: fixed; left: 0; bottom: 0; width: 100%; background-color: transparent; color: #9ca3af; text-align: center; font-size: 13px; padding: 10px; z-index: 100;} </style><div class="rodape">PackFlow - Sistema em desenvolvimento - 2026</div>""", unsafe_allow_html=True)
+# CSS para Estilo e Rodapé
+st.markdown("""
+    <style>
+    .stApp {background-color: #ffffff;}
+    .rodape {position: fixed; left: 0; bottom: 0; width: 100%; background-color: transparent; color: #9ca3af; text-align: center; font-size: 13px; padding: 10px; z-index: 100;}
+    </style>
+    <div class="rodape">PackFlow - Sistema em desenvolvimento - 2026</div>
+""", unsafe_allow_html=True)
 
 load_dotenv() 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -35,16 +42,40 @@ inicializar_banco_usuarios()
 if 'autenticado' not in st.session_state:
     st.session_state.update({'autenticado': False, 'usuario_logado': None, 'nome_usuario': None, 'role_usuario': None, 'deve_trocar_senha': False, 'uploader_key': 0})
 
-# --- LOGIN ---
+# --- FUNCOES DE ENCOMENDAS ---
+def extrair_dados(imagem):
+    prompt = "Analise a etiqueta e extraia em JSON: nome_comprador, bloco, apartamento, nota_fiscal, plataforma."
+    try:
+        response = client.models.generate_content(model='gemini-2.5-flash', contents=[prompt, imagem], config=types.GenerateContentConfig(response_mime_type="application/json"))
+        return json.loads(response.text)
+    except: return None
+
+def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
+    fuso_br = timezone(timedelta(hours=-3))
+    data_hora_atual = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
+    novo = pd.DataFrame([{"Data Cadastro": data_hora_atual, "Quem Cadastrou": usuario, "Nome do Comprador": nome, "Bloco": bloco, "Apartamento": apto, "Nota Fiscal": nf, "Plataforma": plataforma, "Tamanho do Pacote": tamanho, "Status": "Aguardando Retirada", "Data Retirada": "", "Quem Retirou": ""}])
+    if os.path.exists(ARQUIVO_DB):
+        df = pd.concat([pd.read_csv(ARQUIVO_DB, dtype=str), novo], ignore_index=True)
+    else: df = novo
+    df.to_csv(ARQUIVO_DB, index=False)
+
+@st.dialog("Revisar e Salvar")
+def modal_salvar(d):
+    nome = st.text_input("Nome", value=d.get("nome_comprador", ""))
+    bloco = st.text_input("Bloco", value=d.get("bloco", ""))
+    apto = st.text_input("Apartamento", value=d.get("apartamento", ""))
+    if st.button("Salvar"):
+        salvar_no_banco(nome, bloco, apto, d.get("nota_fiscal", ""), d.get("plataforma", ""), "Pequeno", st.session_state['usuario_logado'])
+        st.rerun()
+
+# --- LOGIN E SISTEMA ---
 if not st.session_state['autenticado']:
     col1, col_login, col3 = st.columns([3, 2, 3])
     with col_login:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
-        else: st.markdown("<h2 style='text-align: center;'>PackFlow</h2>", unsafe_allow_html=True)
-        
         user = st.text_input("Login")
         pw = st.text_input("Senha", type="password")
-        if st.button("Autenticar", type="primary", use_container_width=True):
+        if st.button("Entrar", type="primary", use_container_width=True):
             df = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
             usuario = df[(df['Login'] == user) & (df['Senha'] == gerar_hash(pw))]
             if not usuario.empty:
@@ -54,38 +85,28 @@ if not st.session_state['autenticado']:
             else: st.error("Credenciais inválidas.")
     st.stop()
 
-# --- TROCA SENHA ---
-if st.session_state['deve_trocar_senha']:
-    st.warning("Primeiro acesso: Altere sua senha.")
-    nova = st.text_input("Nova Senha", type="password")
-    if st.button("Salvar"):
-        df = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
-        df.loc[df['Login'] == st.session_state['usuario_logado'], ['Senha', 'Trocar_Senha']] = [gerar_hash(nova), 'Nao']
-        df.to_csv(ARQUIVO_USUARIOS, index=False)
-        st.session_state['deve_trocar_senha'] = False
-        st.rerun()
-    st.stop()
-
-# --- SISTEMA ---
+# --- ABA PRINCIPAL ---
 if os.path.exists("logo.png"): st.sidebar.image("logo.png", use_container_width=True)
-st.sidebar.markdown(f"**{st.session_state['nome_usuario']}** ({st.session_state['role_usuario']})")
+st.sidebar.markdown(f"**{st.session_state['nome_usuario']}**")
 if st.sidebar.button("Sair"):
     for key in list(st.session_state.keys()): del st.session_state[key]
     st.rerun()
 
 st.title("PackFlow - Gestão de Pacotes")
 abas = ["Cadastro", "Consulta"]
-if st.session_state['role_usuario'] == 'supervisor': abas.append("Gestão de Usuários")
+if st.session_state['role_usuario'] == 'supervisor': abas.append("Usuários")
 aba_cad, aba_cons, *aba_gestao = st.tabs(abas)
 
 with aba_cad:
-    # (Inserir aqui a lógica de captura de imagem da aba_cadastro anterior)
-    st.info("Funcionalidade de Cadastro Ativa.")
+    cam = st.radio("Método", ["Câmera", "Upload"])
+    img = st.camera_input("Foto") if cam == "Câmera" else st.file_uploader("Upload")
+    if img:
+        d = extrair_dados(PIL.Image.open(img))
+        if d and st.button("Revisar e Salvar"): modal_salvar(d)
 
 with aba_cons:
-    # (Inserir aqui a lógica de consulta, métricas e data_editor da aba_consulta anterior)
-    st.info("Funcionalidade de Consulta Ativa.")
-
-if st.session_state['role_usuario'] == 'supervisor':
-    with aba_gestao[0]:
-        st.info("Funcionalidade de Gestão de Usuários Ativa.")
+    if os.path.exists(ARQUIVO_DB):
+        df = pd.read_csv(ARQUIVO_DB, dtype=str)
+        st.metric("Pendentes", len(df[df["Status"]=="Aguardando Retirada"]))
+        st.data_editor(df, use_container_width=True)
+    else: st.info("Nenhum dado.")
