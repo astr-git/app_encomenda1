@@ -9,34 +9,35 @@ from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 # --- CONFIGURACOES GERAIS ---
-st.set_page_config(page_title="Gestor de Encomendas", layout="wide")
+# Atualizado com o novo nome e um icone de pacote na aba do navegador
+st.set_page_config(page_title="PackFlow", page_icon="📦", layout="wide")
 
 # --- INJECAO DE CSS PARA COR DE FUNDO E RODAPE ---
 st.markdown(
     """
     <style>
-    /* Aplica uma cor de fundo suave (cinza azulado claro) a toda a aplicacao */
+    /* Cor de fundo suave */
     .stApp {
         background-color: #f4f6f9;
     }
     
-    /* Configura o rodape fixo na parte inferior da tela */
+    /* Rodafe fixo com o novo nome */
     .rodape {
         position: fixed;
         left: 0;
         bottom: 0;
         width: 100%;
         background-color: transparent;
-        color: #9ca3af; /* Cinza claro discreto */
+        color: #9ca3af; 
         text-align: center;
         font-size: 13px;
         padding: 10px;
         z-index: 100;
-        pointer-events: none; /* Permite clicar em elementos atras do texto */
+        pointer-events: none; 
     }
     </style>
     
-    <div class="rodape">Sistema em desenvolvimento - 2026</div>
+    <div class="rodape">PackFlow - Sistema em desenvolvimento - 2026</div>
     """,
     unsafe_allow_html=True
 )
@@ -172,22 +173,18 @@ def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
 def modal_confirmar(linhas_selecionadas, pessoa_retirou_input):
     st.markdown("Você está prestes a registrar a entrega dos seguintes pacotes:")
     
-    # Exibe a lista do que será entregue
     for _, row in linhas_selecionadas.iterrows():
         st.markdown(f"📦 **Apto {row['Apartamento']} (Bl {row['Bloco']})** - {row['Nome do Comprador']}")
     
     st.divider()
     
     if st.button("Sim, Confirmar Entrega", type="primary", use_container_width=True):
-        # Abre o CSV mais atualizado para evitar sobreposicoes
         df_encomendas = pd.read_csv(ARQUIVO_DB, dtype=str)
         fuso_br = timezone(timedelta(hours=-3))
         data_retirada = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
 
-        # Atualiza apenas as linhas marcadas
         for idx_real, row in linhas_selecionadas.iterrows():
             nome_final = pessoa_retirou_input.strip()
-            # Logica de assumir o nome do comprador se o campo estiver vazio
             if not nome_final:
                 nome_final = df_encomendas.at[idx_real, "Nome do Comprador"]
                 
@@ -213,9 +210,13 @@ if not st.session_state['autenticado']:
     col1, col_login, col3 = st.columns([1, 1.2, 1])
     
     with col_login:
-        st.markdown("<h2 style='text-align: center; color: #1f2937;'>Controle de Acesso</h2>", unsafe_allow_html=True)
-        # TEXTO ALTERADO AQUI
-        st.markdown("<p style='text-align: center; color: #6b7280; margin-bottom: 20px;'>Sistema de Gestão de Pacotes</p>", unsafe_allow_html=True)
+        # Tenta carregar a imagem do PackFlow. Se nao achar o arquivo, exibe em texto.
+        if os.path.exists("logo.jpg"):
+            st.image("logo.jpg", use_container_width=True)
+        else:
+            st.markdown("<h2 style='text-align: center; color: #1f2937;'>PackFlow</h2>", unsafe_allow_html=True)
+            
+        st.markdown("<p style='text-align: center; color: #6b7280; margin-bottom: 20px;'>Controle de Acesso</p>", unsafe_allow_html=True)
         
         with st.container(border=True):
             usuario_input = st.text_input("Login")
@@ -247,6 +248,10 @@ if st.session_state['deve_trocar_senha']:
     col_vazia1, col_senha, col_vazia3 = st.columns([1, 1.2, 1])
     
     with col_senha:
+        # Se a logo existir, coloca na tela de troca de senha tambem
+        if os.path.exists("logo.jpg"):
+            st.image("logo.jpg", use_container_width=True)
+            
         st.warning(f"Olá, {st.session_state['nome_usuario']}! Esta é a sua primeira vez no sistema.")
         st.markdown("<h3 style='text-align: center;'>Alteração de Senha Obrigatória</h3>", unsafe_allow_html=True)
         
@@ -272,6 +277,13 @@ if st.session_state['deve_trocar_senha']:
 # APLICATIVO AUTENTICADO
 # ==========================================
 
+# Insere a logo no topo do menu lateral
+if os.path.exists("logo.jpg"):
+    st.sidebar.image("logo.jpg", use_container_width=True)
+else:
+    st.sidebar.markdown("## PackFlow")
+
+st.sidebar.divider()
 st.sidebar.markdown(f"Usuario: **{st.session_state['nome_usuario']}**")
 st.sidebar.caption(f"Perfil: {st.session_state['role_usuario'].capitalize()}")
 
@@ -283,7 +295,7 @@ if st.sidebar.button("Encerrar Sessao"):
     st.session_state['deve_trocar_senha'] = False
     st.rerun()
 
-st.title("Sistema de Gestão de Encomendas")
+st.title("PackFlow - Gestão de Entregas")
 
 abas_nomes = ["Cadastro de Encomendas", "Consultar Encomendas"]
 eh_supervisor = (st.session_state['role_usuario'] == 'supervisor')
