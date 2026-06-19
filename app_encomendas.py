@@ -43,7 +43,6 @@ if 'autenticado' not in st.session_state:
 # --- FUNCOES DE USUARIOS E SEGURANCA ---
 def inicializar_banco_usuarios():
     if not os.path.exists(ARQUIVO_USUARIOS):
-        # Cria o banco com o supervisor padrao se nao existir
         df_padrao = pd.DataFrame([{
             "Nome": "Administrador",
             "Login": "supervisor",
@@ -71,7 +70,6 @@ def atualizar_senha(login, nova_senha):
 
 def adicionar_usuario(nome, login, senha):
     df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
-    # Valida se o login ja existe (case insensitive)
     if login.lower() in df_usuarios['Login'].str.lower().values:
         return False
     
@@ -188,7 +186,7 @@ if st.session_state['deve_trocar_senha']:
                 st.session_state['deve_trocar_senha'] = False
                 st.success("Senha atualizada com sucesso! Carregando sistema...")
                 st.rerun()
-    st.stop() # Interrompe a renderizacao do resto do sistema ate a senha ser trocada
+    st.stop() 
 
 # ==========================================
 # APLICATIVO AUTENTICADO
@@ -207,7 +205,6 @@ if st.sidebar.button("Encerrar Sessao"):
 
 st.title("Sistema de Gestao de Encomendas")
 
-# Construcao dinamica das abas baseada no perfil do usuario
 abas_nomes = ["Cadastro de Encomendas", "Consultar Encomendas"]
 eh_supervisor = (st.session_state['role_usuario'] == 'supervisor')
 
@@ -276,7 +273,6 @@ with aba_cadastro:
             
             st.write("") 
             if st.button("Salvar Registro", type="primary", use_container_width=True):
-                # Salva a encomenda registrando o login de quem a inseriu
                 salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, st.session_state['usuario_logado'])
                 st.session_state['mensagem_sucesso'] = f"Encomenda de {nome} salva com sucesso!"
                 del st.session_state['dados']
@@ -399,4 +395,31 @@ with aba_consulta:
 if eh_supervisor:
     with objetos_abas[2]:
         st.subheader("Cadastrar Novo Operador")
-        st.markdown("Crie credenciais de acesso para a equipe
+        st.markdown("Crie credenciais de acesso para a equipe de portaria. A senha deverá ser alterada por eles no primeiro login.")
+        
+        with st.form("form_novo_usuario", clear_on_submit=True):
+            col_u1, col_u2 = st.columns(2)
+            nome_novo = col_u1.text_input("Nome Completo do Operador")
+            login_novo = col_u2.text_input("Login de Acesso (Ex: joao.silva)")
+            senha_provisoria = st.text_input("Senha Provisoria", type="password")
+            
+            btn_criar = st.form_submit_button("Criar Usuario", type="primary")
+            
+            if btn_criar:
+                if nome_novo == "" or login_novo == "" or senha_provisoria == "":
+                    st.error("Todos os campos sao obrigatorios.")
+                elif " " in login_novo:
+                    st.error("O campo 'Login' nao pode conter espacos em branco.")
+                else:
+                    sucesso = adicionar_usuario(nome_novo, login_novo, senha_provisoria)
+                    if sucesso:
+                        st.success(f"Usuario '{login_novo}' criado com sucesso! Ele sera obrigado a trocar de senha no primeiro acesso.")
+                    else:
+                        st.error(f"O login '{login_novo}' ja existe no sistema. Escolha outro nome de acesso.")
+        
+        st.divider()
+        st.subheader("Usuarios Cadastrados")
+        
+        df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
+        df_visualizacao = df_usuarios[['Nome', 'Login', 'Role', 'Trocar_Senha']]
+        st.dataframe(df_visualizacao, use_container_width=True, hide_index=True)
