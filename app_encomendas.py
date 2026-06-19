@@ -27,15 +27,66 @@ PLATAFORMAS_OPCOES = [
 TAMANHO_OPCOES = ["Pequeno", "Médio", "Grande"]
 
 ARQUIVO_DB = "banco_encomendas.csv"
+ARQUIVO_USUARIOS = "banco_usuarios.csv"
 
-# --- VARIAVEIS DE SESSAO ---
+# --- INICIALIZACAO DE SESSOES ---
 if 'uploader_key' not in st.session_state:
     st.session_state['uploader_key'] = 0
 
 if 'autenticado' not in st.session_state:
     st.session_state['autenticado'] = False
+    st.session_state['usuario_logado'] = None
+    st.session_state['nome_usuario'] = None
+    st.session_state['role_usuario'] = None
+    st.session_state['deve_trocar_senha'] = False
 
-# --- FUNCOES PRINCIPAIS ---
+# --- FUNCOES DE USUARIOS E SEGURANCA ---
+def inicializar_banco_usuarios():
+    if not os.path.exists(ARQUIVO_USUARIOS):
+        # Cria o banco com o supervisor padrao se nao existir
+        df_padrao = pd.DataFrame([{
+            "Nome": "Administrador",
+            "Login": "supervisor",
+            "Senha": "admin789",
+            "Role": "supervisor",
+            "Trocar_Senha": "Nao"
+        }])
+        df_padrao.to_csv(ARQUIVO_USUARIOS, index=False, encoding='utf-8')
+
+def validar_login(login, senha):
+    try:
+        df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
+        usuario = df_usuarios[(df_usuarios['Login'] == login) & (df_usuarios['Senha'] == senha)]
+        if not usuario.empty:
+            return usuario.iloc[0]
+        return None
+    except Exception:
+        return None
+
+def atualizar_senha(login, nova_senha):
+    df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
+    df_usuarios.loc[df_usuarios['Login'] == login, 'Senha'] = nova_senha
+    df_usuarios.loc[df_usuarios['Login'] == login, 'Trocar_Senha'] = 'Nao'
+    df_usuarios.to_csv(ARQUIVO_USUARIOS, index=False, encoding='utf-8')
+
+def adicionar_usuario(nome, login, senha):
+    df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
+    # Valida se o login ja existe (case insensitive)
+    if login.lower() in df_usuarios['Login'].str.lower().values:
+        return False
+    
+    novo_user = pd.DataFrame([{
+        "Nome": nome,
+        "Login": login,
+        "Senha": senha,
+        "Role": "operador",
+        "Trocar_Senha": "Sim"
+    }])
+    df_atualizado = pd.concat([df_usuarios, novo_user], ignore_index=True)
+    df_atualizado.to_csv(ARQUIVO_USUARIOS, index=False, encoding='utf-8')
+    return True
+
+# --- FUNCOES DE ENCOMENDAS ---
 def extrair_dados(imagem):
     prompt = """
     Analise a etiqueta e extraia em JSON:
@@ -54,13 +105,12 @@ def extrair_dados(imagem):
     except Exception as e:
         mensagem_erro = str(e)
         if "429" in mensagem_erro or "RESOURCE_EXHAUSTED" in mensagem_erro:
-            st.warning("O limite de consultas da IA foi atingido. Por favor, aguarde cerca de 1 minuto e tente novamente.")
+            st.warning("O limite de consultas da IA foi atingido. Aguarde cerca de 1 minuto e tente novamente.")
         else:
-            st.error(f"Ocorreu um erro de comunicacao com a IA: {mensagem_erro}")
+            st.error(f"Erro de comunicacao com a IA: {mensagem_erro}")
         return None
 
 def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
-    # Fuso horario do Brasil (UTC-3)
     fuso_br = timezone(timedelta(hours=-3))
     data_hora_atual = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
     
@@ -88,45 +138,85 @@ def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
     else:
         novo_registro.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
 
+
 # ==========================================
-# TELA DE LOGIN (CONTROLE DE ACESSO)
+# EXECUCAO DE SEGURANCA E LOGIN
 # ==========================================
+inicializar_banco_usuarios()
+
 if not st.session_state['autenticado']:
     st.subheader("Controle de Acesso - Sistema de Portaria")
     
     col_login, _ = st.columns([1, 2])
     with col_login:
-        usuario_input = st.text_input("Usuario")
+        usuario_input = st.text_input("Login")
         senha_input = st.text_input("Senha", type="password")
         
         if st.button("Autenticar", type="primary", use_container_width=True):
-            usuarios_validos = {
-                "portaria_dia": "senha123",
-                "portaria_noite": "senha456",
-                "supervisor": "admin789"
-            }
+            dados_usuario = validar_login(usuario_input, senha_input)
             
-            if usuario_input in usuarios_validos and usuarios_validos[usuario_input] == senha_input:
+            if dados_usuario is not None:
                 st.session_state['autenticado'] = True
-                st.session_state['usuario_logado'] = usuario_input
+                st.session_state['usuario_logado'] = dados_usuario['Login']
+                st.session_state['nome_usuario'] = dados_usuario['Nome']
+                st.session_state['role_usuario'] = dados_usuario['Role']
+                st.session_state['deve_trocar_senha'] = (dados_usuario['Trocar_Senha'] == 'Sim')
                 st.rerun()
             else:
                 st.error("Credenciais invalidas. Tente novamente.")
     st.stop()
 
 # ==========================================
+# TROCA DE SENHA OBRIGATORIA
+# ==========================================
+if st.session_state['deve_trocar_senha']:
+    st.warning(f"Ola, {st.session_state['nome_usuario']}! Esta e a sua primeira vez no sistema.")
+    st.subheader("Alteracao de Senha Obrigatoria")
+    
+    col_senha, _ = st.columns([1, 2])
+    with col_senha:
+        nova_senha = st.text_input("Digite sua nova senha", type="password")
+        confirmar_senha = st.text_input("Confirme a nova senha", type="password")
+        
+        if st.button("Salvar Nova Senha", type="primary", use_container_width=True):
+            if nova_senha == "" or confirmar_senha == "":
+                st.error("As senhas nao podem estar em branco.")
+            elif nova_senha != confirmar_senha:
+                st.error("As senhas nao coincidem.")
+            else:
+                atualizar_senha(st.session_state['usuario_logado'], nova_senha)
+                st.session_state['deve_trocar_senha'] = False
+                st.success("Senha atualizada com sucesso! Carregando sistema...")
+                st.rerun()
+    st.stop() # Interrompe a renderizacao do resto do sistema ate a senha ser trocada
+
+# ==========================================
 # APLICATIVO AUTENTICADO
 # ==========================================
 
-st.sidebar.markdown(f"Usuario Conectado: **{st.session_state['usuario_logado']}**")
+st.sidebar.markdown(f"Usuario: **{st.session_state['nome_usuario']}**")
+st.sidebar.caption(f"Perfil: {st.session_state['role_usuario'].capitalize()}")
+
 if st.sidebar.button("Encerrar Sessao"):
     st.session_state['autenticado'] = False
     st.session_state['usuario_logado'] = None
+    st.session_state['nome_usuario'] = None
+    st.session_state['role_usuario'] = None
+    st.session_state['deve_trocar_senha'] = False
     st.rerun()
 
 st.title("Sistema de Gestao de Encomendas")
 
-aba_cadastro, aba_consulta = st.tabs(["Cadastro de Encomendas", "Consultar Encomendas"])
+# Construcao dinamica das abas baseada no perfil do usuario
+abas_nomes = ["Cadastro de Encomendas", "Consultar Encomendas"]
+eh_supervisor = (st.session_state['role_usuario'] == 'supervisor')
+
+if eh_supervisor:
+    abas_nomes.append("Gestão de Usuários")
+
+objetos_abas = st.tabs(abas_nomes)
+aba_cadastro = objetos_abas[0]
+aba_consulta = objetos_abas[1]
 
 # ==========================================
 # ABA 1: CADASTRO
@@ -186,6 +276,7 @@ with aba_cadastro:
             
             st.write("") 
             if st.button("Salvar Registro", type="primary", use_container_width=True):
+                # Salva a encomenda registrando o login de quem a inseriu
                 salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, st.session_state['usuario_logado'])
                 st.session_state['mensagem_sucesso'] = f"Encomenda de {nome} salva com sucesso!"
                 del st.session_state['dados']
@@ -256,11 +347,8 @@ with aba_consulta:
                         else:
                             idx_real = pendentes.index[opcoes_pendentes.index(pacote_selecionado)]
                             df_encomendas.at[idx_real, "Status"] = "Retirado"
-                            
-                            # Fuso horario do Brasil para a retirada
                             fuso_br = timezone(timedelta(hours=-3))
                             df_encomendas.at[idx_real, "Data Retirada"] = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
-                            
                             df_encomendas.at[idx_real, "Quem Retirou"] = pessoa_retirou
                             df_encomendas.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
                             st.success("Retirada registrada com sucesso!")
@@ -269,7 +357,7 @@ with aba_consulta:
             st.success("Tudo limpo! Nao ha encomendas aguardando retirada para os filtros selecionados.")
         
         st.divider()
-        st.subheader("Historico Completo (Editavel)")
+        st.subheader("Historico Completo")
         st.caption("Dica: De um clique duplo sobre as celulas para corrigir erros. As alteracoes sao salvas automaticamente.")
         
         df_exibicao = df_filtrado.sort_values(by="Data Cadastro", ascending=False)
@@ -304,3 +392,11 @@ with aba_consulta:
         )
     else:
         st.info("O banco de dados esta vazio. Cadastre uma encomenda primeiro.")
+
+# ==========================================
+# ABA 3: GESTÃO DE USUÁRIOS (SÓ SUPERVISOR)
+# ==========================================
+if eh_supervisor:
+    with objetos_abas[2]:
+        st.subheader("Cadastrar Novo Operador")
+        st.markdown("Crie credenciais de acesso para a equipe
