@@ -15,12 +15,9 @@ st.set_page_config(page_title="PackFlow", page_icon="📦", layout="wide")
 st.markdown(
     """
     <style>
-    /* Cor de fundo harmonizada com a logo (Branco) */
     .stApp {
         background-color: #ffffff;
     }
-    
-    /* Rodafe fixo com o novo nome */
     .rodape {
         position: fixed;
         left: 0;
@@ -35,7 +32,6 @@ st.markdown(
         pointer-events: none; 
     }
     </style>
-    
     <div class="rodape">PackFlow - Sistema em desenvolvimento - 2026</div>
     """,
     unsafe_allow_html=True
@@ -167,7 +163,41 @@ def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
         novo_registro.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
 
 
-# --- DIALOGO DE CONFIRMACAO (POP-UP) ---
+# --- DIALOGOS (POP-UPS) ---
+
+@st.dialog("Revisar e Salvar Encomenda")
+def modal_salvar_encomenda(dados_ia):
+    st.markdown("Revise os dados extraídos pela Inteligência Artificial. **Fique à vontade para corrigir qualquer erro antes de salvar.**")
+    
+    # Os campos sao pre-preenchidos com os dados da IA, mas totalmente editaveis
+    nome = st.text_input("Nome do Comprador", value=dados_ia.get("nome_comprador", ""))
+    
+    c_bloco, c_apto = st.columns(2)
+    bloco = c_bloco.text_input("Bloco", value=dados_ia.get("bloco", ""))
+    apto = c_apto.text_input("Apartamento", value=dados_ia.get("apartamento", ""))
+    
+    nf = st.text_input("Nota Fiscal / Declaração", value=dados_ia.get("nota_fiscal", ""))
+    
+    plataforma_ia = dados_ia.get("plataforma", "Não identificado")
+    try:
+        index_padrao = PLATAFORMAS_OPCOES.index(plataforma_ia)
+    except:
+        index_padrao = PLATAFORMAS_OPCOES.index("Não identificado")
+        
+    c_plat, c_tam = st.columns(2)
+    plataforma = c_plat.selectbox("Plataforma / Marketplace", options=PLATAFORMAS_OPCOES, index=index_padrao)
+    tamanho = c_tam.selectbox("Tamanho do Pacote", options=TAMANHO_OPCOES, index=0)
+    
+    st.write("") 
+    if st.button("Confirmar e Salvar no Sistema", type="primary", use_container_width=True):
+        salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, st.session_state['usuario_logado'])
+        st.session_state['mensagem_sucesso'] = f"Encomenda de {nome} salva com sucesso!"
+        del st.session_state['dados']
+        if 'ultimo_arquivo' in st.session_state:
+            del st.session_state['ultimo_arquivo']
+        st.session_state['uploader_key'] += 1
+        st.rerun()
+
 @st.dialog("Confirmação de Retirada")
 def modal_confirmar(linhas_selecionadas, pessoa_retirou_input):
     st.markdown("Você está prestes a registrar a entrega dos seguintes pacotes:")
@@ -206,7 +236,6 @@ if not st.session_state['autenticado']:
     st.write("")
     st.write("")
     
-    # NOVAS PROPORCOES: 3 para a esquerda, 2 para o meio (menor), 3 para a direita
     col1, col_login, col3 = st.columns([3, 2, 3])
     
     with col_login:
@@ -246,7 +275,6 @@ if st.session_state['deve_trocar_senha']:
     st.write("")
     st.write("")
     
-    # Aplicando a mesma proporcao mais enxuta para a tela de troca de senha
     col_vazia1, col_senha, col_vazia3 = st.columns([3, 2, 3])
     
     with col_senha:
@@ -349,31 +377,19 @@ with aba_cadastro:
         if 'dados' in st.session_state:
             d = st.session_state['dados']
             
-            nome = st.text_input("Nome do Comprador", value=d.get("nome_comprador", ""))
-            c_bloco, c_apto = st.columns(2)
-            bloco = c_bloco.text_input("Bloco", value=d.get("bloco", ""))
-            apto = c_apto.text_input("Apartamento", value=d.get("apartamento", ""))
-            nf = st.text_input("Nota Fiscal / Declaracao", value=d.get("nota_fiscal", ""))
+            st.info("A Inteligência Artificial extraiu os seguintes dados. Revise-os antes de gravar no sistema.")
             
-            plataforma_ia = d.get("plataforma", "Não identificado")
-            try:
-                index_padrao = PLATAFORMAS_OPCOES.index(plataforma_ia)
-            except:
-                index_padrao = PLATAFORMAS_OPCOES.index("Não identificado")
-                
-            c_plat, c_tam = st.columns(2)
-            plataforma = c_plat.selectbox("Plataforma / Marketplace", options=PLATAFORMAS_OPCOES, index=index_padrao)
-            tamanho = c_tam.selectbox("Tamanho do Pacote", options=TAMANHO_OPCOES, index=0)
+            # Exibe um resumo limpo (Somente leitura) na tela principal
+            with st.container(border=True):
+                st.markdown(f"**Morador(a):** {d.get('nome_comprador', '')}")
+                st.markdown(f"**Local:** Bloco {d.get('bloco', '')} | Apto {d.get('apartamento', '')}")
+                st.markdown(f"**Plataforma:** {d.get('plataforma', '')}")
             
-            st.write("") 
-            if st.button("Salvar Registro", type="primary", use_container_width=True):
-                salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, st.session_state['usuario_logado'])
-                st.session_state['mensagem_sucesso'] = f"Encomenda de {nome} salva com sucesso!"
-                del st.session_state['dados']
-                if 'ultimo_arquivo' in st.session_state:
-                    del st.session_state['ultimo_arquivo']
-                st.session_state['uploader_key'] += 1
-                st.rerun()
+            st.write("")
+            
+            # Botao que abre o Pop-up de correcao
+            if st.button("Revisar e Salvar Registro", type="primary", use_container_width=True):
+                modal_salvar_encomenda(d)
         else:
             st.info("Aguardando captura ou upload da imagem...")
 
