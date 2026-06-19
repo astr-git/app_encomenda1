@@ -452,4 +452,82 @@ with aba_consulta:
                 st.write("")
                 if st.button("Confirmar Entrega", type="primary", use_container_width=True):
                     if linhas_selecionadas.empty:
-                        st.error("Mar
+                        st.error("Marque pelo menos um pacote na tabela acima para dar baixa.")
+                    else:
+                        modal_confirmar(linhas_selecionadas, pessoa_retirou)
+        else:
+            st.success("Tudo limpo! Nao ha encomendas aguardando retirada para os filtros selecionados.")
+        
+        st.divider()
+        
+        # --- HISTORICO COMPLETO ---
+        st.subheader("Historico Completo")
+        st.caption("Abaixo estao exibidos todos os registros (Pendentes e Retirados). De um clique duplo sobre as celulas para corrigir erros. As alteracoes sao salvas automaticamente.")
+        
+        df_exibicao = df_filtrado.sort_values(by="Data Cadastro", ascending=False)
+        
+        edited_df = st.data_editor(
+            df_exibicao,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed", 
+            column_config={
+                "Plataforma": st.column_config.SelectboxColumn("Plataforma", options=PLATAFORMAS_OPCOES, required=True),
+                "Tamanho do Pacote": st.column_config.SelectboxColumn("Tamanho do Pacote", options=TAMANHO_OPCOES, required=True),
+                "Data Cadastro": st.column_config.TextColumn(disabled=True),
+                "Quem Cadastrou": st.column_config.TextColumn(disabled=True),
+                "Status": st.column_config.TextColumn(disabled=True),
+                "Data Retirada": st.column_config.TextColumn(disabled=True),
+                "Quem Retirou": st.column_config.TextColumn(disabled=True),
+            }
+        )
+        
+        if not edited_df.equals(df_exibicao):
+            df_encomendas.update(edited_df)
+            df_encomendas.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
+            st.rerun()
+        
+        csv_download = df_filtrado.to_csv(index=False, encoding='utf-8').encode('utf-8')
+        st.download_button(
+            label="Baixar Relatorio Filtrado (CSV)",
+            data=csv_download,
+            file_name="historico_encomendas_filtrado.csv",
+            mime="text/csv"
+        )
+    else:
+        st.info("O banco de dados esta vazio. Cadastre uma encomenda primeiro.")
+
+# ==========================================
+# ABA 3: GESTÃO DE USUÁRIOS (SÓ SUPERVISOR)
+# ==========================================
+if eh_supervisor:
+    with objetos_abas[2]:
+        st.subheader("Cadastrar Novo Operador")
+        st.markdown("Crie credenciais de acesso para a equipe de portaria. A senha deverá ser alterada por eles no primeiro login.")
+        
+        with st.form("form_novo_usuario", clear_on_submit=True):
+            col_u1, col_u2 = st.columns(2)
+            nome_novo = col_u1.text_input("Nome Completo do Operador")
+            login_novo = col_u2.text_input("Login de Acesso (Ex: joao.silva)")
+            senha_provisoria = st.text_input("Senha Provisoria", type="password")
+            
+            btn_criar = st.form_submit_button("Criar Usuario", type="primary")
+            
+            if btn_criar:
+                if nome_novo == "" or login_novo == "" or senha_provisoria == "":
+                    st.error("Todos os campos sao obrigatorios.")
+                elif " " in login_novo:
+                    st.error("O campo 'Login' nao pode conter espacos em branco.")
+                else:
+                    sucesso = adicionar_usuario(nome_novo, login_novo, senha_provisoria)
+                    if sucesso:
+                        st.success(f"Usuario '{login_novo}' criado com sucesso! Ele sera obrigado a trocar de senha no primeiro acesso.")
+                    else:
+                        st.error(f"O login '{login_novo}' ja existe no sistema. Escolha outro nome de acesso.")
+        
+        st.divider()
+        st.subheader("Usuarios Cadastrados")
+        
+        df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
+        df_visualizacao = df_usuarios[['Nome', 'Login', 'Role', 'Trocar_Senha']]
+        st.dataframe(df_visualizacao, use_container_width=True, hide_index=True)
