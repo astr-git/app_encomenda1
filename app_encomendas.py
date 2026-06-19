@@ -12,110 +12,65 @@ from dotenv import load_dotenv
 # --- CONFIGURACOES GERAIS ---
 st.set_page_config(page_title="PackFlow", page_icon="📦", layout="wide")
 
-# --- INJECAO DE CSS PARA COR DE FUNDO E RODAPE ---
-st.markdown(
-    """
+# CSS para Estilo
+st.markdown("""
     <style>
-    .stApp {
-        background-color: #ffffff;
-    }
-    .rodape {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: transparent;
-        color: #9ca3af; 
-        text-align: center;
-        font-size: 13px;
-        padding: 10px;
-        z-index: 100;
-        pointer-events: none; 
-    }
+    .stApp {background-color: #ffffff;}
+    .rodape {position: fixed; left: 0; bottom: 0; width: 100%; color: #9ca3af; text-align: center; font-size: 13px; padding: 10px; z-index: 100;}
     </style>
     <div class="rodape">PackFlow - Sistema em desenvolvimento - 2026</div>
-    """,
-    unsafe_allow_html=True
-)
+""", unsafe_allow_html=True)
 
 load_dotenv() 
-
-CHAVE_API = os.getenv("GEMINI_API_KEY")
-if not CHAVE_API:
-    st.error("ERRO CRITICO: Chave da API nao encontrada no arquivo .env!")
-    st.stop()
-
-client = genai.Client(api_key=CHAVE_API)
-
-PLATAFORMAS_OPCOES = [
-    "Mercado Livre", "Shopee", "Amazon", "Shein", "Petz", 
-    "Magalu", "AliExpress", "Americanas", "Casas Bahia", "Outro", "Não identificado"
-]
-TAMANHO_OPCOES = ["Pequeno", "Médio", "Grande"]
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 ARQUIVO_DB = "banco_encomendas.csv"
 ARQUIVO_USUARIOS = "banco_usuarios.csv"
+PLATAFORMAS_OPCOES = ["Mercado Livre", "Shopee", "Amazon", "Shein", "Petz", "Magalu", "AliExpress", "Americanas", "Casas Bahia", "Outro", "Não identificado"]
+TAMANHO_OPCOES = ["Pequeno", "Médio", "Grande"]
 
-# --- INICIALIZACAO DE SESSOES ---
-if 'uploader_key' not in st.session_state:
-    st.session_state['uploader_key'] = 0
-
-if 'autenticado' not in st.session_state:
-    st.session_state['autenticado'] = False
-    st.session_state['usuario_logado'] = None
-    st.session_state['nome_usuario'] = None
-    st.session_state['role_usuario'] = None
-    st.session_state['deve_trocar_senha'] = False
-
-# --- FUNCOES DE SEGURANCA (CRIPTOGRAFIA) ---
-def gerar_hash(senha):
-    """Transforma a senha em um Hash SHA-256 irreversível"""
-    return hashlib.sha256(senha.encode('utf-8')).hexdigest()
+# --- FUNCOES DE SEGURANCA E AUTH ---
+def gerar_hash(senha): return hashlib.sha256(senha.encode('utf-8')).hexdigest()
 
 def inicializar_banco_usuarios():
     if not os.path.exists(ARQUIVO_USUARIOS):
-        df_padrao = pd.DataFrame([{
-            "Nome": "Administrador",
-            "Login": "supervisor",
-            "Senha": gerar_hash("admin789"), # Salva apenas o Hash
-            "Role": "supervisor",
-            "Trocar_Senha": "Nao"
-        }])
-        df_padrao.to_csv(ARQUIVO_USUARIOS, index=False, encoding='utf-8')
+        df = pd.DataFrame([{"Nome": "Administrador", "Login": "supervisor", "Senha": gerar_hash("admin789"), "Role": "supervisor", "Trocar_Senha": "Nao"}])
+        df.to_csv(ARQUIVO_USUARIOS, index=False)
 
-def validar_login(login, senha_digitada):
-    try:
-        df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
-        senha_hash = gerar_hash(senha_digitada)
-        usuario = df_usuarios[(df_usuarios['Login'] == login) & (df_usuarios['Senha'] == senha_hash)]
-        if not usuario.empty:
-            return usuario.iloc[0]
-        return None
-    except Exception:
-        return None
+inicializar_banco_usuarios()
 
-def atualizar_senha(login, nova_senha):
-    df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
-    senha_hash = gerar_hash(nova_senha)
-    df_usuarios.loc[df_usuarios['Login'] == login, 'Senha'] = senha_hash
-    df_usuarios.loc[df_usuarios['Login'] == login, 'Trocar_Senha'] = 'Nao'
-    df_usuarios.to_csv(ARQUIVO_USUARIOS, index=False, encoding='utf-8')
+if 'autenticado' not in st.session_state:
+    st.session_state.update({'autenticado': False, 'usuario_logado': None, 'nome_usuario': None, 'role_usuario': None, 'deve_trocar_senha': False, 'uploader_key': 0})
 
-def adicionar_usuario(nome, login, senha):
-    df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
-    if login.lower() in df_usuarios['Login'].str.lower().values:
-        return False
-    
-    novo_user = pd.DataFrame([{
-        "Nome": nome,
-        "Login": login,
-        "Senha": gerar_hash(senha),
-        "Role": "operador",
-        "Trocar_Senha": "Sim"
-    }])
-    df_atualizado = pd.concat([df_usuarios, novo_user], ignore_index=True)
-    df_atualizado.to_csv(ARQUIVO_USUARIOS, index=False, encoding='utf-8')
-    return True
+# --- LOGIN ---
+if not st.session_state['autenticado']:
+    col1, col_login, col3 = st.columns([3, 2, 3])
+    with col_login:
+        if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
+        else: st.markdown("<h2 style='text-align: center;'>PackFlow</h2>", unsafe_allow_html=True)
+        user = st.text_input("Login")
+        pw = st.text_input("Senha", type="password")
+        if st.button("Entrar", type="primary", use_container_width=True):
+            df = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
+            usuario = df[(df['Login'] == user) & (df['Senha'] == gerar_hash(pw))]
+            if not usuario.empty:
+                d = usuario.iloc[0]
+                st.session_state.update({'autenticado': True, 'usuario_logado': d['Login'], 'nome_usuario': d['Nome'], 'role_usuario': d['Role'], 'deve_trocar_senha': (d['Trocar_Senha'] == 'Sim')})
+                st.rerun()
+            else: st.error("Credenciais inválidas.")
+    st.stop()
+
+# --- TROCA SENHA ---
+if st.session_state['deve_trocar_senha']:
+    st.warning("Primeiro acesso: Altere sua senha.")
+    nova = st.text_input("Nova Senha", type="password")
+    if st.button("Salvar"):
+        df = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
+        df.loc[df['Login'] == st.session_state['usuario_logado'], ['Senha', 'Trocar_Senha']] = [gerar_hash(nova), 'Nao']
+        df.to_csv(ARQUIVO_USUARIOS, index=False)
+        st.session_state['deve_trocar_senha'] = False
+        st.rerun()
+    st.stop()
 
 # --- FUNCOES DE ENCOMENDAS ---
 def extrair_dados(imagem):
