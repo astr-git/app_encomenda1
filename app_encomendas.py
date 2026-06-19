@@ -11,6 +11,19 @@ from dotenv import load_dotenv
 # --- CONFIGURACOES GERAIS ---
 st.set_page_config(page_title="Gestor de Encomendas", layout="wide")
 
+# --- INJECAO DE CSS PARA COR DE FUNDO ---
+st.markdown(
+    """
+    <style>
+    /* Aplica uma cor de fundo suave (cinza azulado claro) a toda a aplicacao */
+    .stApp {
+        background-color: #f4f6f9;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 load_dotenv() 
 
 CHAVE_API = os.getenv("GEMINI_API_KEY")
@@ -143,49 +156,68 @@ def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
 inicializar_banco_usuarios()
 
 if not st.session_state['autenticado']:
-    st.subheader("Controle de Acesso - Sistema de Portaria")
+    st.write("")
+    st.write("")
+    st.write("")
     
-    col_login, _ = st.columns([1, 2])
+    # Criamos 3 colunas invisiveis. A do meio (col_login) e onde o cartao vai ficar.
+    col1, col_login, col3 = st.columns([1, 1.2, 1])
+    
     with col_login:
-        usuario_input = st.text_input("Login")
-        senha_input = st.text_input("Senha", type="password")
+        st.markdown("<h2 style='text-align: center; color: #1f2937;'>Controle de Acesso</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #6b7280; margin-bottom: 20px;'>Sistema de Gestão de Portaria</p>", unsafe_allow_html=True)
         
-        if st.button("Autenticar", type="primary", use_container_width=True):
-            dados_usuario = validar_login(usuario_input, senha_input)
+        # O container com border=True cria o efeito visual de um cartao
+        with st.container(border=True):
+            usuario_input = st.text_input("Login")
+            senha_input = st.text_input("Senha", type="password")
             
-            if dados_usuario is not None:
-                st.session_state['autenticado'] = True
-                st.session_state['usuario_logado'] = dados_usuario['Login']
-                st.session_state['nome_usuario'] = dados_usuario['Nome']
-                st.session_state['role_usuario'] = dados_usuario['Role']
-                st.session_state['deve_trocar_senha'] = (dados_usuario['Trocar_Senha'] == 'Sim')
-                st.rerun()
-            else:
-                st.error("Credenciais invalidas. Tente novamente.")
+            st.write("") # Espacamento
+            
+            if st.button("Autenticar", type="primary", use_container_width=True):
+                dados_usuario = validar_login(usuario_input, senha_input)
+                
+                if dados_usuario is not None:
+                    st.session_state['autenticado'] = True
+                    st.session_state['usuario_logado'] = dados_usuario['Login']
+                    st.session_state['nome_usuario'] = dados_usuario['Nome']
+                    st.session_state['role_usuario'] = dados_usuario['Role']
+                    st.session_state['deve_trocar_senha'] = (dados_usuario['Trocar_Senha'] == 'Sim')
+                    st.rerun()
+                else:
+                    st.error("Credenciais invalidas. Tente novamente.")
     st.stop()
 
 # ==========================================
 # TROCA DE SENHA OBRIGATORIA
 # ==========================================
 if st.session_state['deve_trocar_senha']:
-    st.warning(f"Ola, {st.session_state['nome_usuario']}! Esta e a sua primeira vez no sistema.")
-    st.subheader("Alteracao de Senha Obrigatoria")
+    st.write("")
+    st.write("")
     
-    col_senha, _ = st.columns([1, 2])
+    # Centralizando tambem a tela de troca de senha
+    col_vazia1, col_senha, col_vazia3 = st.columns([1, 1.2, 1])
+    
     with col_senha:
-        nova_senha = st.text_input("Digite sua nova senha", type="password")
-        confirmar_senha = st.text_input("Confirme a nova senha", type="password")
+        st.warning(f"Olá, {st.session_state['nome_usuario']}! Esta é a sua primeira vez no sistema.")
+        st.markdown("<h3 style='text-align: center;'>Alteração de Senha Obrigatória</h3>", unsafe_allow_html=True)
         
-        if st.button("Salvar Nova Senha", type="primary", use_container_width=True):
-            if nova_senha == "" or confirmar_senha == "":
-                st.error("As senhas nao podem estar em branco.")
-            elif nova_senha != confirmar_senha:
-                st.error("As senhas nao coincidem.")
-            else:
-                atualizar_senha(st.session_state['usuario_logado'], nova_senha)
-                st.session_state['deve_trocar_senha'] = False
-                st.success("Senha atualizada com sucesso! Carregando sistema...")
-                st.rerun()
+        with st.container(border=True):
+            nova_senha = st.text_input("Digite sua nova senha", type="password")
+            confirmar_senha = st.text_input("Confirme a nova senha", type="password")
+            
+            st.write("")
+            
+            if st.button("Salvar Nova Senha", type="primary", use_container_width=True):
+                if nova_senha == "" or confirmar_senha == "":
+                    st.error("As senhas não podem estar em branco.")
+                elif nova_senha != confirmar_senha:
+                    st.error("As senhas não coincidem.")
+                else:
+                    atualizar_senha(st.session_state['usuario_logado'], nova_senha)
+                    st.session_state['deve_trocar_senha'] = False
+                    st.success("Senha atualizada com sucesso! Carregando sistema...")
+                    st.rerun()
     st.stop() 
 
 # ==========================================
@@ -203,7 +235,7 @@ if st.sidebar.button("Encerrar Sessao"):
     st.session_state['deve_trocar_senha'] = False
     st.rerun()
 
-st.title("Sistema de Gestao de Encomendas")
+st.title("Sistema de Gestão de Encomendas")
 
 abas_nomes = ["Cadastro de Encomendas", "Consultar Encomendas"]
 eh_supervisor = (st.session_state['role_usuario'] == 'supervisor')
