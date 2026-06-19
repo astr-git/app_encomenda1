@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # --- CONFIGURACOES GERAIS ---
 st.set_page_config(page_title="Gestor de Encomendas", layout="wide")
 
-# --- INJECAO DE CSS PARA COR DE FUNDO E RODAPE ---
+# --- INJECAO DE CSS PARA COR DE FUNDO ---
 st.markdown(
     """
     <style>
@@ -19,24 +19,7 @@ st.markdown(
     .stApp {
         background-color: #f4f6f9;
     }
-    
-    /* Configura o rodape fixo na parte inferior da tela */
-    .rodape {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: transparent;
-        color: #9ca3af; /* Cinza claro discreto */
-        text-align: center;
-        font-size: 13px;
-        padding: 10px;
-        z-index: 100;
-        pointer-events: none; /* Permite clicar em elementos atras do texto */
-    }
     </style>
-    
-    <div class="rodape">Sistema em desenvolvimento - 2026</div>
     """,
     unsafe_allow_html=True
 )
@@ -167,39 +150,6 @@ def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
         novo_registro.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
 
 
-# --- DIALOGO DE CONFIRMACAO (POP-UP) ---
-@st.dialog("Confirmação de Retirada")
-def modal_confirmar(linhas_selecionadas, pessoa_retirou_input):
-    st.markdown("Você está prestes a registrar a entrega dos seguintes pacotes:")
-    
-    # Exibe a lista do que será entregue
-    for _, row in linhas_selecionadas.iterrows():
-        st.markdown(f"📦 **Apto {row['Apartamento']} (Bl {row['Bloco']})** - {row['Nome do Comprador']}")
-    
-    st.divider()
-    
-    if st.button("Sim, Confirmar Entrega", type="primary", use_container_width=True):
-        # Abre o CSV mais atualizado para evitar sobreposicoes
-        df_encomendas = pd.read_csv(ARQUIVO_DB, dtype=str)
-        fuso_br = timezone(timedelta(hours=-3))
-        data_retirada = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
-
-        # Atualiza apenas as linhas marcadas
-        for idx_real, row in linhas_selecionadas.iterrows():
-            nome_final = pessoa_retirou_input.strip()
-            # Logica de assumir o nome do comprador se o campo estiver vazio
-            if not nome_final:
-                nome_final = df_encomendas.at[idx_real, "Nome do Comprador"]
-                
-            df_encomendas.at[idx_real, "Status"] = "Retirado"
-            df_encomendas.at[idx_real, "Data Retirada"] = data_retirada
-            df_encomendas.at[idx_real, "Quem Retirou"] = nome_final
-
-        df_encomendas.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
-        st.session_state['msg_retirada'] = f"{len(linhas_selecionadas)} pacote(s) entregue(s) com sucesso!"
-        st.rerun()
-
-
 # ==========================================
 # EXECUCAO DE SEGURANCA E LOGIN
 # ==========================================
@@ -210,18 +160,19 @@ if not st.session_state['autenticado']:
     st.write("")
     st.write("")
     
+    # Criamos 3 colunas invisiveis. A do meio (col_login) e onde o cartao vai ficar.
     col1, col_login, col3 = st.columns([1, 1.2, 1])
     
     with col_login:
         st.markdown("<h2 style='text-align: center; color: #1f2937;'>Controle de Acesso</h2>", unsafe_allow_html=True)
-        # TEXTO ALTERADO AQUI
-        st.markdown("<p style='text-align: center; color: #6b7280; margin-bottom: 20px;'>Sistema de Gestão de Pacotes</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #6b7280; margin-bottom: 20px;'>Sistema de Gestão de Portaria</p>", unsafe_allow_html=True)
         
+        # O container com border=True cria o efeito visual de um cartao
         with st.container(border=True):
             usuario_input = st.text_input("Login")
             senha_input = st.text_input("Senha", type="password")
             
-            st.write("")
+            st.write("") # Espacamento
             
             if st.button("Autenticar", type="primary", use_container_width=True):
                 dados_usuario = validar_login(usuario_input, senha_input)
@@ -244,6 +195,7 @@ if st.session_state['deve_trocar_senha']:
     st.write("")
     st.write("")
     
+    # Centralizando tambem a tela de troca de senha
     col_vazia1, col_senha, col_vazia3 = st.columns([1, 1.2, 1])
     
     with col_senha:
@@ -367,10 +319,6 @@ with aba_cadastro:
 # ABA 2: CONSULTA E RETIRADA
 # ==========================================
 with aba_consulta:
-    if 'msg_retirada' in st.session_state:
-        st.success(st.session_state['msg_retirada'])
-        del st.session_state['msg_retirada']
-
     if os.path.exists(ARQUIVO_DB):
         df_encomendas = pd.read_csv(ARQUIVO_DB, dtype=str)
         df_encomendas.fillna("", inplace=True)
@@ -405,49 +353,40 @@ with aba_consulta:
             df_filtrado = df_filtrado[df_filtrado["Apartamento"].astype(str) == filtro_apto]
             
         st.divider()
-        
-        # --- SECAO DE RETIRADA EM LOTE ---
-        st.subheader("Baixa de Encomendas (Pendentes)")
-        st.caption("Marque a caixa na coluna 'Selecionar' para os pacotes que estão sendo retirados agora.")
-        
-        pendentes = df_filtrado[df_filtrado["Status"] == "Aguardando Retirada"].copy()
+        st.subheader("Registrar Retirada de Encomenda")
+        pendentes = df_filtrado[df_filtrado["Status"] == "Aguardando Retirada"]
         
         if not pendentes.empty:
-            pendentes.insert(0, "Selecionar", False)
-            
-            edit_pendentes = st.data_editor(
-                pendentes,
-                hide_index=True,
-                use_container_width=True,
-                disabled=["Data Cadastro", "Quem Cadastrou", "Nome do Comprador", "Bloco", "Apartamento", "Nota Fiscal", "Plataforma", "Tamanho do Pacote", "Status"],
-                column_config={
-                    "Selecionar": st.column_config.CheckboxColumn("Selecionar", default=False),
-                    "Data Retirada": None, 
-                    "Quem Retirou": None   
-                }
-            )
-            
-            linhas_selecionadas = edit_pendentes[edit_pendentes["Selecionar"] == True]
-            
-            c1, c2 = st.columns([2, 1])
-            with c1:
-                pessoa_retirou = st.text_input("Quem está retirando? (Opcional - deixe em branco para assumir o titular)")
-            with c2:
-                st.write("") 
-                st.write("")
-                if st.button("Confirmar Entrega", type="primary", use_container_width=True):
-                    if linhas_selecionadas.empty:
-                        st.error("Marque pelo menos um pacote na tabela acima para dar baixa.")
-                    else:
-                        modal_confirmar(linhas_selecionadas, pessoa_retirou)
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([2, 2, 1])
+                opcoes_pendentes = pendentes.apply(
+                    lambda row: f"{row['Apartamento']} (Bl {row['Bloco']}) - {row['Nome do Comprador']} [{row['Tamanho do Pacote']}]", axis=1).tolist()
+                
+                with c1:
+                    pacote_selecionado = st.selectbox("Selecione o pacote pendente:", opcoes_pendentes)
+                with c2:
+                    pessoa_retirou = st.text_input("Nome da pessoa que retirou:")
+                with c3:
+                    st.write("") 
+                    st.write("")
+                    if st.button("Confirmar Entrega", type="primary"):
+                        if pessoa_retirou.strip() == "":
+                            st.error("Informe quem retirou!")
+                        else:
+                            idx_real = pendentes.index[opcoes_pendentes.index(pacote_selecionado)]
+                            df_encomendas.at[idx_real, "Status"] = "Retirado"
+                            fuso_br = timezone(timedelta(hours=-3))
+                            df_encomendas.at[idx_real, "Data Retirada"] = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
+                            df_encomendas.at[idx_real, "Quem Retirou"] = pessoa_retirou
+                            df_encomendas.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
+                            st.success("Retirada registrada com sucesso!")
+                            st.rerun() 
         else:
             st.success("Tudo limpo! Nao ha encomendas aguardando retirada para os filtros selecionados.")
         
         st.divider()
-        
-        # --- HISTORICO COMPLETO ---
         st.subheader("Historico Completo")
-        st.caption("Abaixo estao exibidos todos os registros (Pendentes e Retirados). De um clique duplo sobre as celulas para corrigir erros. As alteracoes sao salvas automaticamente.")
+        st.caption("Dica: De um clique duplo sobre as celulas para corrigir erros. As alteracoes sao salvas automaticamente.")
         
         df_exibicao = df_filtrado.sort_values(by="Data Cadastro", ascending=False)
         
