@@ -14,10 +14,9 @@ st.set_page_config(page_title="Gestor de Encomendas", layout="wide")
 # Carrega as variaveis ocultas do arquivo .env
 load_dotenv() 
 
-# Puxa a chave do ambiente (se nao achar, avisa no console)
 CHAVE_API = os.getenv("GEMINI_API_KEY")
 if not CHAVE_API:
-    st.error("ERRO CRÍTICO: Chave da API não encontrada no arquivo .env!")
+    st.error("ERRO CRITICO: Chave da API nao encontrada no arquivo .env!")
     st.stop()
 
 client = genai.Client(api_key=CHAVE_API)
@@ -31,9 +30,14 @@ TAMANHO_OPCOES = ["Pequeno", "Médio", "Grande"]
 
 ARQUIVO_DB = "banco_encomendas.csv"
 
+# --- VARIAVEIS DE SESSAO ---
 if 'uploader_key' not in st.session_state:
     st.session_state['uploader_key'] = 0
 
+if 'autenticado' not in st.session_state:
+    st.session_state['autenticado'] = False
+
+# --- FUNCOES PRINCIPAIS ---
 def extrair_dados(imagem):
     prompt = """
     Analise a etiqueta e extraia em JSON:
@@ -57,11 +61,12 @@ def extrair_dados(imagem):
             st.error(f"Ocorreu um erro de comunicacao com a IA: {mensagem_erro}")
         return None
 
-def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho):
+def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
     data_hora_atual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     
     novo_registro = pd.DataFrame([{
         "Data Cadastro": data_hora_atual,
+        "Quem Cadastrou": usuario,
         "Nome do Comprador": nome,
         "Bloco": bloco,
         "Apartamento": apto,
@@ -78,8 +83,45 @@ def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho):
     else:
         novo_registro.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
 
-# --- INTERFACE VISUAL ---
-st.title("Sistema de Gestão de Encomendas")
+# ==========================================
+# TELA DE LOGIN (CONTROLE DE ACESSO)
+# ==========================================
+if not st.session_state['autenticado']:
+    st.subheader("Controle de Acesso - Sistema de Portaria")
+    
+    col_login, _ = st.columns([1, 2])
+    with col_login:
+        usuario_input = st.text_input("Usuario")
+        senha_input = st.text_input("Senha", type="password")
+        
+        if st.button("Autenticar", type="primary", use_container_width=True):
+            # Base local de usuarios para validacao de acesso
+            usuarios_validos = {
+                "portaria_dia": "senha123",
+                "portaria_noite": "senha456",
+                "supervisor": "admin789"
+            }
+            
+            if usuario_input in usuarios_validos and usuarios_validos[usuario_input] == senha_input:
+                st.session_state['autenticado'] = True
+                st.session_state['usuario_logado'] = usuario_input
+                st.rerun()
+            else:
+                st.error("Credenciais invalidas. Tente novamente.")
+    st.stop()
+
+# ==========================================
+# APLICATIVO AUTENTICADO
+# ==========================================
+
+# Barra lateral com informacoes do usuario
+st.sidebar.markdown(f"Usuario Conectado: **{st.session_state['usuario_logado']}**")
+if st.sidebar.button("Encerrar Sessao"):
+    st.session_state['autenticado'] = False
+    st.session_state['usuario_logado'] = None
+    st.rerun()
+
+st.title("Sistema de Gestao de Encomendas")
 
 aba_cadastro, aba_consulta = st.tabs(["Cadastro de Encomendas", "Consultar Encomendas"])
 
@@ -92,20 +134,17 @@ with aba_cadastro:
         st.success(st.session_state['mensagem_sucesso'])
         del st.session_state['mensagem_sucesso']
 
-    st.markdown("Utilize a câmera ou faça o upload da foto. A análise iniciará automaticamente.")
+    st.markdown("Utilize a camera ou faca o upload da foto. A analise iniciara automaticamente.")
     
     col1, col2 = st.columns([1, 1], gap="large")
 
     with col1:
         st.subheader("1. Captura da Etiqueta")
         
-        # Botões horizontais para escolher o método (Mobile ou PC)
-        tipo_captura = st.radio("Como deseja capturar a imagem?", ["📸 Câmera do Celular", "📂 Upload de Arquivo"], horizontal=True)
-        
+        tipo_captura = st.radio("Como deseja capturar a imagem?", ["Camera do Celular", "Upload de Arquivo"], horizontal=True)
         arquivo_final = None
         
-        # Exibe o input correspondente à escolha do usuário
-        if tipo_captura == "📸 Câmera do Celular":
+        if tipo_captura == "Camera do Celular":
             arquivo_final = st.camera_input("Tire a foto da etiqueta", key=f"camera_{st.session_state['uploader_key']}")
         else:
             arquivo_final = st.file_uploader(
@@ -117,21 +156,18 @@ with aba_cadastro:
         if arquivo_final:
             imagem_pil = PIL.Image.open(arquivo_final)
             
-            # Evita duplicar a imagem na tela se estiver usando a câmera
-            if tipo_captura == "📂 Upload de Arquivo":
+            if tipo_captura == "Upload de Arquivo":
                 st.image(imagem_pil, caption="Etiqueta Carregada", use_container_width=True)
             
-            # Identificador único para evitar re-análises acidentais
-            nome_identificador = arquivo_final.name if tipo_captura == "📂 Upload de Arquivo" else f"foto_cam_{st.session_state['uploader_key']}"
+            nome_identificador = arquivo_final.name if tipo_captura == "Upload de Arquivo" else f"foto_cam_{st.session_state['uploader_key']}"
             
             if 'ultimo_arquivo' not in st.session_state or st.session_state['ultimo_arquivo'] != nome_identificador:
-                with st.spinner("Processando dados com Inteligência Artificial..."):
+                with st.spinner("Processando dados com Inteligencia Artificial..."):
                     resultado_ia = extrair_dados(imagem_pil)
                     if resultado_ia:
                         st.session_state['dados'] = resultado_ia
                         st.session_state['ultimo_arquivo'] = nome_identificador
 
-    # A PARTE QUE FALTAVA COMEÇA AQUI
     with col2:
         st.subheader("2. Conferir e Salvar")
         
@@ -144,7 +180,7 @@ with aba_cadastro:
             bloco = c_bloco.text_input("Bloco", value=d.get("bloco", ""))
             apto = c_apto.text_input("Apartamento", value=d.get("apartamento", ""))
             
-            nf = st.text_input("Nota Fiscal / Declaração", value=d.get("nota_fiscal", ""))
+            nf = st.text_input("Nota Fiscal / Declaracao", value=d.get("nota_fiscal", ""))
             
             plataforma_ia = d.get("plataforma", "Não identificado")
             try:
@@ -159,12 +195,17 @@ with aba_cadastro:
             st.write("") 
             
             if st.button("Salvar Registro", type="primary", use_container_width=True):
-                salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho)
+                # Passa o usuario logado para a funcao de salvamento
+                salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, st.session_state['usuario_logado'])
+                
                 st.session_state['mensagem_sucesso'] = f"Encomenda de {nome} salva com sucesso!"
+                
                 del st.session_state['dados']
                 if 'ultimo_arquivo' in st.session_state:
                     del st.session_state['ultimo_arquivo']
+                    
                 st.session_state['uploader_key'] += 1
+                
                 st.rerun()
         else:
             st.info("Aguardando captura ou upload da imagem...")
@@ -255,57 +296,44 @@ with aba_consulta:
                             st.success("Retirada registrada com sucesso!")
                             st.rerun() 
         else:
-            st.success("Tudo limpo! Não há encomendas aguardando retirada para os filtros selecionados.")
+            st.success("Tudo limpo! Nao ha encomendas aguardando retirada para os filtros selecionados.")
         
         st.divider()
         
         # --- SECAO DE TABELA GERAL INTERATIVA ---
-        st.subheader("Histórico Completo (Editável)")
-        st.caption("💡 Dica: Dê um **clique duplo** sobre as células (como a Plataforma, Nome ou Apartamento) na tabela abaixo para corrigir erros. As alterações são salvas no banco de dados automaticamente.")
+        st.subheader("Historico Completo (Editavel)")
+        st.caption("Dica: De um clique duplo sobre as celulas para corrigir erros. As alteracoes sao salvas automaticamente.")
         
         df_exibicao = df_filtrado.sort_values(by="Data Cadastro", ascending=False)
         
-        # O data_editor permite a edição direta na tela
         edited_df = st.data_editor(
             df_exibicao,
             use_container_width=True,
             hide_index=True,
-            num_rows="fixed", # Impede de adicionar linhas em branco na tabela
+            num_rows="fixed", 
             column_config={
-                # Transforma a coluna de plataforma em um menu Dropdown
-                "Plataforma": st.column_config.SelectboxColumn(
-                    "Plataforma",
-                    options=PLATAFORMAS_OPCOES,
-                    required=True
-                ),
-                # Transforma a coluna de tamanho em um menu Dropdown
-                "Tamanho do Pacote": st.column_config.SelectboxColumn(
-                    "Tamanho do Pacote",
-                    options=TAMANHO_OPCOES,
-                    required=True
-                ),
-                # Bloqueia a edição dos campos gerados pelo sistema
+                "Plataforma": st.column_config.SelectboxColumn("Plataforma", options=PLATAFORMAS_OPCOES, required=True),
+                "Tamanho do Pacote": st.column_config.SelectboxColumn("Tamanho do Pacote", options=TAMANHO_OPCOES, required=True),
+                # Bloqueia a edicao dos campos gerados pelo sistema, incluindo o usuario de auditoria
                 "Data Cadastro": st.column_config.TextColumn(disabled=True),
+                "Quem Cadastrou": st.column_config.TextColumn(disabled=True),
                 "Status": st.column_config.TextColumn(disabled=True),
                 "Data Retirada": st.column_config.TextColumn(disabled=True),
                 "Quem Retirou": st.column_config.TextColumn(disabled=True),
             }
         )
         
-        # Lógica de Auto-Save: Se a tabela editada na tela for diferente da tabela lida do CSV, ele salva a diferença.
         if not edited_df.equals(df_exibicao):
-            # O .update() mescla a edição usando o index real oculto do dataframe
             df_encomendas.update(edited_df)
             df_encomendas.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
-            # Roda a página novamente para atualizar todos os dados visuais
             st.rerun()
         
         csv_download = df_filtrado.to_csv(index=False, encoding='utf-8').encode('utf-8')
         st.download_button(
-            label="Baixar Relatório Filtrado (CSV)",
+            label="Baixar Relatorio Filtrado (CSV)",
             data=csv_download,
             file_name="historico_encomendas_filtrado.csv",
             mime="text/csv"
         )
     else:
-        st.info("O banco de dados está vazio. Cadastre uma encomenda primeiro.")
+        st.info("O banco de dados esta vazio. Cadastre uma encomenda primeiro.")
