@@ -5,6 +5,7 @@ from google import genai
 from google.genai import types
 import pandas as pd
 import os
+import hashlib
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
@@ -66,22 +67,27 @@ if 'autenticado' not in st.session_state:
     st.session_state['role_usuario'] = None
     st.session_state['deve_trocar_senha'] = False
 
-# --- FUNCOES DE USUARIOS E SEGURANCA ---
+# --- FUNCOES DE SEGURANCA (CRIPTOGRAFIA) ---
+def gerar_hash(senha):
+    """Transforma a senha em um Hash SHA-256 irreversível"""
+    return hashlib.sha256(senha.encode('utf-8')).hexdigest()
+
 def inicializar_banco_usuarios():
     if not os.path.exists(ARQUIVO_USUARIOS):
         df_padrao = pd.DataFrame([{
             "Nome": "Administrador",
             "Login": "supervisor",
-            "Senha": "admin789",
+            "Senha": gerar_hash("admin789"), # Salva apenas o Hash
             "Role": "supervisor",
             "Trocar_Senha": "Nao"
         }])
         df_padrao.to_csv(ARQUIVO_USUARIOS, index=False, encoding='utf-8')
 
-def validar_login(login, senha):
+def validar_login(login, senha_digitada):
     try:
         df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
-        usuario = df_usuarios[(df_usuarios['Login'] == login) & (df_usuarios['Senha'] == senha)]
+        senha_hash = gerar_hash(senha_digitada)
+        usuario = df_usuarios[(df_usuarios['Login'] == login) & (df_usuarios['Senha'] == senha_hash)]
         if not usuario.empty:
             return usuario.iloc[0]
         return None
@@ -90,7 +96,8 @@ def validar_login(login, senha):
 
 def atualizar_senha(login, nova_senha):
     df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
-    df_usuarios.loc[df_usuarios['Login'] == login, 'Senha'] = nova_senha
+    senha_hash = gerar_hash(nova_senha)
+    df_usuarios.loc[df_usuarios['Login'] == login, 'Senha'] = senha_hash
     df_usuarios.loc[df_usuarios['Login'] == login, 'Trocar_Senha'] = 'Nao'
     df_usuarios.to_csv(ARQUIVO_USUARIOS, index=False, encoding='utf-8')
 
@@ -102,7 +109,7 @@ def adicionar_usuario(nome, login, senha):
     novo_user = pd.DataFrame([{
         "Nome": nome,
         "Login": login,
-        "Senha": senha,
+        "Senha": gerar_hash(senha),
         "Role": "operador",
         "Trocar_Senha": "Sim"
     }])
@@ -169,12 +176,12 @@ def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
 def modal_salvar_encomenda(dados_ia):
     st.markdown("Revise os dados extraídos pela Inteligência Artificial. **Fique à vontade para corrigir qualquer erro antes de salvar.**")
     
-    # Os campos sao pre-preenchidos com os dados da IA, mas totalmente editaveis
     nome = st.text_input("Nome do Comprador", value=dados_ia.get("nome_comprador", ""))
     
     c_bloco, c_apto = st.columns(2)
-    bloco = c_bloco.text_input("Bloco", value=dados_ia.get("bloco", ""))
-    apto = c_apto.text_input("Apartamento", value=dados_ia.get("apartamento", ""))
+    # Adicionando tooltips (ajudas) aos inputs
+    bloco = c_bloco.text_input("Bloco", value=dados_ia.get("bloco", ""), help="Apenas números. Ex: 11")
+    apto = c_apto.text_input("Apartamento", value=dados_ia.get("apartamento", ""), help="Apenas números. Ex: 104")
     
     nf = st.text_input("Nota Fiscal / Declaração", value=dados_ia.get("nota_fiscal", ""))
     
@@ -265,7 +272,7 @@ if not st.session_state['autenticado']:
                     st.session_state['deve_trocar_senha'] = (dados_usuario['Trocar_Senha'] == 'Sim')
                     st.rerun()
                 else:
-                    st.error("Credenciais invalidas. Tente novamente.")
+                    st.error("Credenciais inválidas. Tente novamente.")
     st.stop()
 
 # ==========================================
@@ -379,7 +386,6 @@ with aba_cadastro:
             
             st.info("A Inteligência Artificial extraiu os seguintes dados. Revise-os antes de gravar no sistema.")
             
-            # Exibe um resumo limpo (Somente leitura) na tela principal
             with st.container(border=True):
                 st.markdown(f"**Morador(a):** {d.get('nome_comprador', '')}")
                 st.markdown(f"**Local:** Bloco {d.get('bloco', '')} | Apto {d.get('apartamento', '')}")
@@ -387,7 +393,6 @@ with aba_cadastro:
             
             st.write("")
             
-            # Botao que abre o Pop-up de correcao
             if st.button("Revisar e Salvar Registro", type="primary", use_container_width=True):
                 modal_salvar_encomenda(d)
         else:
@@ -404,6 +409,27 @@ with aba_consulta:
     if os.path.exists(ARQUIVO_DB):
         df_encomendas = pd.read_csv(ARQUIVO_DB, dtype=str)
         df_encomendas.fillna("", inplace=True)
+        
+        # --- PAINEL DE METRICAS (HUD) ---
+        st.subheader("Painel de Controle")
+        
+        fuso_br = timezone(timedelta(hours=-3))
+        hoje_str = datetime.now(fuso_br).strftime("%d/%m/%Y")
+        mes_str = datetime.now(fuso_br).strftime("%m/%Y")
+        
+        total_pendentes = len(df_encomendas[df_encomendas["Status"] == "Aguardando Retirada"])
+        entregues_hoje = len(df_encomendas[(df_encomendas["Status"] == "Retirado") & (df_encomendas["Data Retirada"].astype(str).str.startswith(hoje_str))])
+        recebidos_mes = len(df_encomendas[df_encomendas["Data Cadastro"].astype(str).str.contains(mes_str)])
+        
+        col_m1, col_m2, col_m3 = st.columns(3)
+        with col_m1:
+            st.metric("📦 Pacotes Pendentes", total_pendentes)
+        with col_m2:
+            st.metric("✅ Entregues Hoje", entregues_hoje)
+        with col_m3:
+            st.metric("📅 Recebidos no Mês", recebidos_mes)
+            
+        st.divider()
         
         st.subheader("Filtros de Pesquisa")
         col_f1, col_f2, col_f3 = st.columns(3)
@@ -541,8 +567,9 @@ if eh_supervisor:
                         st.error(f"O login '{login_novo}' ja existe no sistema. Escolha outro nome de acesso.")
         
         st.divider()
-        st.subheader("Usuarios Cadastrados")
+        st.subheader("Usuarios Cadastrados (Senhas Ocultas)")
         
         df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
+        # Exibe apenas os campos nao sensiveis para o gestor
         df_visualizacao = df_usuarios[['Nome', 'Login', 'Role', 'Trocar_Senha']]
         st.dataframe(df_visualizacao, use_container_width=True, hide_index=True)
