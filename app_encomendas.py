@@ -128,4 +128,5 @@ with aba_cadastro:
                 with st.spinner("Processando dados com Inteligência Artificial..."):
                     resultado_ia = extrair_dados(imagem_pil)
                     if resultado_ia:
-                        st.session_state['dados
+                        st.session_state['dados'] = resultado_ia
+                        st.session_state['ultimo_arquivo'] = nome_identificador
