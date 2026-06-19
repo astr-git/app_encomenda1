@@ -209,9 +209,11 @@ if not st.session_state['autenticado']:
     col1, col_login, col3 = st.columns([1, 1.2, 1])
     
     with col_login:
-        # ATUALIZADO: Busca agora pela logo em .png
         if os.path.exists("logo.png"):
-            st.image("logo.png", use_container_width=True)
+            # Cria subcolunas para restringir a largura da imagem e mante-la centralizada
+            c_img_esq, c_img_centro, c_img_dir = st.columns([1, 2, 1])
+            with c_img_centro:
+                st.image("logo.png", use_container_width=True)
         else:
             st.markdown("<h2 style='text-align: center; color: #1f2937;'>PackFlow</h2>", unsafe_allow_html=True)
             
@@ -247,9 +249,11 @@ if st.session_state['deve_trocar_senha']:
     col_vazia1, col_senha, col_vazia3 = st.columns([1, 1.2, 1])
     
     with col_senha:
-        # ATUALIZADO: Busca agora pela logo em .png
         if os.path.exists("logo.png"):
-            st.image("logo.png", use_container_width=True)
+            # Aplica o mesmo limite visual na tela de troca de senha
+            c_img_esq, c_img_centro, c_img_dir = st.columns([1, 2, 1])
+            with c_img_centro:
+                st.image("logo.png", use_container_width=True)
             
         st.warning(f"Olá, {st.session_state['nome_usuario']}! Esta é a sua primeira vez no sistema.")
         st.markdown("<h3 style='text-align: center;'>Alteração de Senha Obrigatória</h3>", unsafe_allow_html=True)
@@ -276,8 +280,8 @@ if st.session_state['deve_trocar_senha']:
 # APLICATIVO AUTENTICADO
 # ==========================================
 
-# ATUALIZADO: Busca agora pela logo em .png no menu lateral
 if os.path.exists("logo.png"):
+    # No menu lateral mantemos a largura total pois a coluna ja e fina por natureza
     st.sidebar.image("logo.png", use_container_width=True)
 else:
     st.sidebar.markdown("## PackFlow")
@@ -448,82 +452,4 @@ with aba_consulta:
                 st.write("")
                 if st.button("Confirmar Entrega", type="primary", use_container_width=True):
                     if linhas_selecionadas.empty:
-                        st.error("Marque pelo menos um pacote na tabela acima para dar baixa.")
-                    else:
-                        modal_confirmar(linhas_selecionadas, pessoa_retirou)
-        else:
-            st.success("Tudo limpo! Nao ha encomendas aguardando retirada para os filtros selecionados.")
-        
-        st.divider()
-        
-        # --- HISTORICO COMPLETO ---
-        st.subheader("Historico Completo")
-        st.caption("Abaixo estao exibidos todos os registros (Pendentes e Retirados). De um clique duplo sobre as celulas para corrigir erros. As alteracoes sao salvas automaticamente.")
-        
-        df_exibicao = df_filtrado.sort_values(by="Data Cadastro", ascending=False)
-        
-        edited_df = st.data_editor(
-            df_exibicao,
-            use_container_width=True,
-            hide_index=True,
-            num_rows="fixed", 
-            column_config={
-                "Plataforma": st.column_config.SelectboxColumn("Plataforma", options=PLATAFORMAS_OPCOES, required=True),
-                "Tamanho do Pacote": st.column_config.SelectboxColumn("Tamanho do Pacote", options=TAMANHO_OPCOES, required=True),
-                "Data Cadastro": st.column_config.TextColumn(disabled=True),
-                "Quem Cadastrou": st.column_config.TextColumn(disabled=True),
-                "Status": st.column_config.TextColumn(disabled=True),
-                "Data Retirada": st.column_config.TextColumn(disabled=True),
-                "Quem Retirou": st.column_config.TextColumn(disabled=True),
-            }
-        )
-        
-        if not edited_df.equals(df_exibicao):
-            df_encomendas.update(edited_df)
-            df_encomendas.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
-            st.rerun()
-        
-        csv_download = df_filtrado.to_csv(index=False, encoding='utf-8').encode('utf-8')
-        st.download_button(
-            label="Baixar Relatorio Filtrado (CSV)",
-            data=csv_download,
-            file_name="historico_encomendas_filtrado.csv",
-            mime="text/csv"
-        )
-    else:
-        st.info("O banco de dados esta vazio. Cadastre uma encomenda primeiro.")
-
-# ==========================================
-# ABA 3: GESTÃO DE USUÁRIOS (SÓ SUPERVISOR)
-# ==========================================
-if eh_supervisor:
-    with objetos_abas[2]:
-        st.subheader("Cadastrar Novo Operador")
-        st.markdown("Crie credenciais de acesso para a equipe de portaria. A senha deverá ser alterada por eles no primeiro login.")
-        
-        with st.form("form_novo_usuario", clear_on_submit=True):
-            col_u1, col_u2 = st.columns(2)
-            nome_novo = col_u1.text_input("Nome Completo do Operador")
-            login_novo = col_u2.text_input("Login de Acesso (Ex: joao.silva)")
-            senha_provisoria = st.text_input("Senha Provisoria", type="password")
-            
-            btn_criar = st.form_submit_button("Criar Usuario", type="primary")
-            
-            if btn_criar:
-                if nome_novo == "" or login_novo == "" or senha_provisoria == "":
-                    st.error("Todos os campos sao obrigatorios.")
-                elif " " in login_novo:
-                    st.error("O campo 'Login' nao pode conter espacos em branco.")
-                else:
-                    sucesso = adicionar_usuario(nome_novo, login_novo, senha_provisoria)
-                    if sucesso:
-                        st.success(f"Usuario '{login_novo}' criado com sucesso! Ele sera obrigado a trocar de senha no primeiro acesso.")
-                    else:
-                        st.error(f"O login '{login_novo}' ja existe no sistema. Escolha outro nome de acesso.")
-        
-        st.divider()
-        st.subheader("Usuarios Cadastrados")
-        
-        df_usuarios = pd.read_csv(ARQUIVO_USUARIOS, dtype=str)
-        df_visualizacao = df_usuarios[['Nome', 'Login', 'Role', 'Trocar_Senha']]
-        st.dataframe(df_visualizacao, use_container_width=True, hide_index=True)
+                        st.error("Mar
