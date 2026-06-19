@@ -5,13 +5,12 @@ from google import genai
 from google.genai import types
 import pandas as pd
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 # --- CONFIGURACOES GERAIS ---
 st.set_page_config(page_title="Gestor de Encomendas", layout="wide")
 
-# Carrega as variaveis ocultas do arquivo .env
 load_dotenv() 
 
 CHAVE_API = os.getenv("GEMINI_API_KEY")
@@ -25,7 +24,6 @@ PLATAFORMAS_OPCOES = [
     "Mercado Livre", "Shopee", "Amazon", "Shein", "Petz", 
     "Magalu", "AliExpress", "Americanas", "Casas Bahia", "Outro", "Não identificado"
 ]
-
 TAMANHO_OPCOES = ["Pequeno", "Médio", "Grande"]
 
 ARQUIVO_DB = "banco_encomendas.csv"
@@ -62,7 +60,9 @@ def extrair_dados(imagem):
         return None
 
 def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
-    data_hora_atual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    # Fuso horario do Brasil (UTC-3)
+    fuso_br = timezone(timedelta(hours=-3))
+    data_hora_atual = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
     
     novo_registro = pd.DataFrame([{
         "Data Cadastro": data_hora_atual,
@@ -79,7 +79,12 @@ def salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, usuario):
     }])
     
     if os.path.exists(ARQUIVO_DB):
-        novo_registro.to_csv(ARQUIVO_DB, mode='a', header=False, index=False, encoding='utf-8')
+        try:
+            df_existente = pd.read_csv(ARQUIVO_DB, dtype=str)
+            df_atualizado = pd.concat([df_existente, novo_registro], ignore_index=True)
+            df_atualizado.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
+        except Exception:
+            novo_registro.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
     else:
         novo_registro.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
 
@@ -95,7 +100,6 @@ if not st.session_state['autenticado']:
         senha_input = st.text_input("Senha", type="password")
         
         if st.button("Autenticar", type="primary", use_container_width=True):
-            # Base local de usuarios para validacao de acesso
             usuarios_validos = {
                 "portaria_dia": "senha123",
                 "portaria_noite": "senha456",
@@ -114,7 +118,6 @@ if not st.session_state['autenticado']:
 # APLICATIVO AUTENTICADO
 # ==========================================
 
-# Barra lateral com informacoes do usuario
 st.sidebar.markdown(f"Usuario Conectado: **{st.session_state['usuario_logado']}**")
 if st.sidebar.button("Encerrar Sessao"):
     st.session_state['autenticado'] = False
@@ -129,33 +132,25 @@ aba_cadastro, aba_consulta = st.tabs(["Cadastro de Encomendas", "Consultar Encom
 # ABA 1: CADASTRO
 # ==========================================
 with aba_cadastro:
-    
     if 'mensagem_sucesso' in st.session_state:
         st.success(st.session_state['mensagem_sucesso'])
         del st.session_state['mensagem_sucesso']
 
     st.markdown("Utilize a camera ou faca o upload da foto. A analise iniciara automaticamente.")
-    
     col1, col2 = st.columns([1, 1], gap="large")
 
     with col1:
         st.subheader("1. Captura da Etiqueta")
-        
         tipo_captura = st.radio("Como deseja capturar a imagem?", ["Camera do Celular", "Upload de Arquivo"], horizontal=True)
         arquivo_final = None
         
         if tipo_captura == "Camera do Celular":
             arquivo_final = st.camera_input("Tire a foto da etiqueta", key=f"camera_{st.session_state['uploader_key']}")
         else:
-            arquivo_final = st.file_uploader(
-                "Escolha ou arraste a imagem aqui", 
-                type=["jpg", "jpeg", "png"],
-                key=f"uploader_{st.session_state['uploader_key']}"
-            )
+            arquivo_final = st.file_uploader("Escolha ou arraste a imagem aqui", type=["jpg", "jpeg", "png"], key=f"uploader_{st.session_state['uploader_key']}")
         
         if arquivo_final:
             imagem_pil = PIL.Image.open(arquivo_final)
-            
             if tipo_captura == "Upload de Arquivo":
                 st.image(imagem_pil, caption="Etiqueta Carregada", use_container_width=True)
             
@@ -170,16 +165,13 @@ with aba_cadastro:
 
     with col2:
         st.subheader("2. Conferir e Salvar")
-        
         if 'dados' in st.session_state:
             d = st.session_state['dados']
             
             nome = st.text_input("Nome do Comprador", value=d.get("nome_comprador", ""))
-            
             c_bloco, c_apto = st.columns(2)
             bloco = c_bloco.text_input("Bloco", value=d.get("bloco", ""))
             apto = c_apto.text_input("Apartamento", value=d.get("apartamento", ""))
-            
             nf = st.text_input("Nota Fiscal / Declaracao", value=d.get("nota_fiscal", ""))
             
             plataforma_ia = d.get("plataforma", "Não identificado")
@@ -193,19 +185,13 @@ with aba_cadastro:
             tamanho = c_tam.selectbox("Tamanho do Pacote", options=TAMANHO_OPCOES, index=0)
             
             st.write("") 
-            
             if st.button("Salvar Registro", type="primary", use_container_width=True):
-                # Passa o usuario logado para a funcao de salvamento
                 salvar_no_banco(nome, bloco, apto, nf, plataforma, tamanho, st.session_state['usuario_logado'])
-                
                 st.session_state['mensagem_sucesso'] = f"Encomenda de {nome} salva com sucesso!"
-                
                 del st.session_state['dados']
                 if 'ultimo_arquivo' in st.session_state:
                     del st.session_state['ultimo_arquivo']
-                    
                 st.session_state['uploader_key'] += 1
-                
                 st.rerun()
         else:
             st.info("Aguardando captura ou upload da imagem...")
@@ -218,66 +204,49 @@ with aba_consulta:
         df_encomendas = pd.read_csv(ARQUIVO_DB, dtype=str)
         df_encomendas.fillna("", inplace=True)
         
-        # --- FILTROS DE PESQUISA ---
         st.subheader("Filtros de Pesquisa")
-        
         col_f1, col_f2, col_f3 = st.columns(3)
         
         with col_f1:
             filtro_nome = st.text_input("Pesquisar por Nome:")
-            
         with col_f2:
             opcoes_blocos = ["Todos"] + [str(i) for i in range(1, 19)]
             filtro_bloco = st.selectbox("Filtrar por Bloco:", opcoes_blocos)
-            
         with col_f3:
             if filtro_bloco == "Todos":
                 filtro_apto = st.text_input("Filtrar por Apartamento (Ex: 104):")
             else:
                 bloco_int = int(filtro_bloco)
                 andares = 20 if bloco_int in [17, 18] else 5
-                
                 aptos_validos = ["Todos"]
                 for andar in range(1, andares + 1):
                     for unid in range(1, 9):
                         aptos_validos.append(f"{andar}{unid:02d}")
-                        
                 filtro_apto = st.selectbox("Filtrar por Apartamento:", aptos_validos)
                 
-        # --- APLICACAO DOS FILTROS ---
         df_filtrado = df_encomendas.copy()
         
         if filtro_nome.strip():
             df_filtrado = df_filtrado[df_filtrado["Nome do Comprador"].str.contains(filtro_nome, case=False, na=False)]
-            
         if filtro_bloco != "Todos":
             df_filtrado = df_filtrado[df_filtrado["Bloco"].astype(str).str.lstrip('0') == filtro_bloco]
-            
         if filtro_apto and filtro_apto != "Todos":
             df_filtrado = df_filtrado[df_filtrado["Apartamento"].astype(str) == filtro_apto]
             
         st.divider()
-        
-        # --- SECAO DE RETIRADA ---
         st.subheader("Registrar Retirada de Encomenda")
-        
         pendentes = df_filtrado[df_filtrado["Status"] == "Aguardando Retirada"]
         
         if not pendentes.empty:
             with st.container(border=True):
                 c1, c2, c3 = st.columns([2, 2, 1])
-                
                 opcoes_pendentes = pendentes.apply(
-                    lambda row: f"{row['Apartamento']} (Bl {row['Bloco']}) - {row['Nome do Comprador']} [{row['Tamanho do Pacote']}]", 
-                    axis=1
-                ).tolist()
+                    lambda row: f"{row['Apartamento']} (Bl {row['Bloco']}) - {row['Nome do Comprador']} [{row['Tamanho do Pacote']}]", axis=1).tolist()
                 
                 with c1:
                     pacote_selecionado = st.selectbox("Selecione o pacote pendente:", opcoes_pendentes)
-                
                 with c2:
                     pessoa_retirou = st.text_input("Nome da pessoa que retirou:")
-                
                 with c3:
                     st.write("") 
                     st.write("")
@@ -286,21 +255,20 @@ with aba_consulta:
                             st.error("Informe quem retirou!")
                         else:
                             idx_real = pendentes.index[opcoes_pendentes.index(pacote_selecionado)]
-                            
                             df_encomendas.at[idx_real, "Status"] = "Retirado"
-                            df_encomendas.at[idx_real, "Data Retirada"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                            
+                            # Fuso horario do Brasil para a retirada
+                            fuso_br = timezone(timedelta(hours=-3))
+                            df_encomendas.at[idx_real, "Data Retirada"] = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
+                            
                             df_encomendas.at[idx_real, "Quem Retirou"] = pessoa_retirou
-                            
                             df_encomendas.to_csv(ARQUIVO_DB, index=False, encoding='utf-8')
-                            
                             st.success("Retirada registrada com sucesso!")
                             st.rerun() 
         else:
             st.success("Tudo limpo! Nao ha encomendas aguardando retirada para os filtros selecionados.")
         
         st.divider()
-        
-        # --- SECAO DE TABELA GERAL INTERATIVA ---
         st.subheader("Historico Completo (Editavel)")
         st.caption("Dica: De um clique duplo sobre as celulas para corrigir erros. As alteracoes sao salvas automaticamente.")
         
@@ -314,7 +282,6 @@ with aba_consulta:
             column_config={
                 "Plataforma": st.column_config.SelectboxColumn("Plataforma", options=PLATAFORMAS_OPCOES, required=True),
                 "Tamanho do Pacote": st.column_config.SelectboxColumn("Tamanho do Pacote", options=TAMANHO_OPCOES, required=True),
-                # Bloqueia a edicao dos campos gerados pelo sistema, incluindo o usuario de auditoria
                 "Data Cadastro": st.column_config.TextColumn(disabled=True),
                 "Quem Cadastrou": st.column_config.TextColumn(disabled=True),
                 "Status": st.column_config.TextColumn(disabled=True),
