@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # --- CONFIGURACOES GERAIS ---
 st.set_page_config(page_title="Gestor de Encomendas", layout="wide")
 
-# --- INJECAO DE CSS PARA COR DE FUNDO ---
+# --- INJECAO DE CSS PARA COR DE FUNDO E RODAPE ---
 st.markdown(
     """
     <style>
@@ -19,7 +19,24 @@ st.markdown(
     .stApp {
         background-color: #f4f6f9;
     }
+    
+    /* Configura o rodape fixo na parte inferior da tela */
+    .rodape {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: transparent;
+        color: #9ca3af; /* Cinza claro discreto */
+        text-align: center;
+        font-size: 13px;
+        padding: 10px;
+        z-index: 100;
+        pointer-events: none; /* Permite clicar em elementos atras do texto */
+    }
     </style>
+    
+    <div class="rodape">Sistema em desenvolvimento - 2026</div>
     """,
     unsafe_allow_html=True
 )
@@ -197,7 +214,8 @@ if not st.session_state['autenticado']:
     
     with col_login:
         st.markdown("<h2 style='text-align: center; color: #1f2937;'>Controle de Acesso</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #6b7280; margin-bottom: 20px;'>Sistema de Gestão de Portaria</p>", unsafe_allow_html=True)
+        # TEXTO ALTERADO AQUI
+        st.markdown("<p style='text-align: center; color: #6b7280; margin-bottom: 20px;'>Sistema de Gestão de Pacotes</p>", unsafe_allow_html=True)
         
         with st.container(border=True):
             usuario_input = st.text_input("Login")
@@ -395,23 +413,20 @@ with aba_consulta:
         pendentes = df_filtrado[df_filtrado["Status"] == "Aguardando Retirada"].copy()
         
         if not pendentes.empty:
-            # Cria a coluna booleana para selecao
             pendentes.insert(0, "Selecionar", False)
             
             edit_pendentes = st.data_editor(
                 pendentes,
                 hide_index=True,
                 use_container_width=True,
-                # Bloqueia edicao de tudo, exceto da coluna de selecao
                 disabled=["Data Cadastro", "Quem Cadastrou", "Nome do Comprador", "Bloco", "Apartamento", "Nota Fiscal", "Plataforma", "Tamanho do Pacote", "Status"],
                 column_config={
                     "Selecionar": st.column_config.CheckboxColumn("Selecionar", default=False),
-                    "Data Retirada": None, # Oculta visualmente
-                    "Quem Retirou": None   # Oculta visualmente
+                    "Data Retirada": None, 
+                    "Quem Retirou": None   
                 }
             )
             
-            # Filtra apenas os que o usuario clicou no checkbox
             linhas_selecionadas = edit_pendentes[edit_pendentes["Selecionar"] == True]
             
             c1, c2 = st.columns([2, 1])
@@ -424,7 +439,6 @@ with aba_consulta:
                     if linhas_selecionadas.empty:
                         st.error("Marque pelo menos um pacote na tabela acima para dar baixa.")
                     else:
-                        # Chama o pop-up nativo
                         modal_confirmar(linhas_selecionadas, pessoa_retirou)
         else:
             st.success("Tudo limpo! Nao ha encomendas aguardando retirada para os filtros selecionados.")
