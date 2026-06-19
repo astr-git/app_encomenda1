@@ -15,9 +15,9 @@ st.set_page_config(page_title="PackFlow", page_icon="📦", layout="wide")
 st.markdown(
     """
     <style>
-    /* Cor de fundo suave */
+    /* Cor de fundo harmonizada com a logo (Branco) */
     .stApp {
-        background-color: #f4f6f9;
+        background-color: #ffffff;
     }
     
     /* Rodafe fixo com o novo nome */
@@ -206,11 +206,11 @@ if not st.session_state['autenticado']:
     st.write("")
     st.write("")
     
-    col1, col_login, col3 = st.columns([1, 1.2, 1])
+    # NOVAS PROPORCOES: 3 para a esquerda, 2 para o meio (menor), 3 para a direita
+    col1, col_login, col3 = st.columns([3, 2, 3])
     
     with col_login:
         if os.path.exists("logo.png"):
-            # Cria subcolunas para restringir a largura da imagem e mante-la centralizada
             c_img_esq, c_img_centro, c_img_dir = st.columns([1, 2, 1])
             with c_img_centro:
                 st.image("logo.png", use_container_width=True)
@@ -246,11 +246,11 @@ if st.session_state['deve_trocar_senha']:
     st.write("")
     st.write("")
     
-    col_vazia1, col_senha, col_vazia3 = st.columns([1, 1.2, 1])
+    # Aplicando a mesma proporcao mais enxuta para a tela de troca de senha
+    col_vazia1, col_senha, col_vazia3 = st.columns([3, 2, 3])
     
     with col_senha:
         if os.path.exists("logo.png"):
-            # Aplica o mesmo limite visual na tela de troca de senha
             c_img_esq, c_img_centro, c_img_dir = st.columns([1, 2, 1])
             with c_img_centro:
                 st.image("logo.png", use_container_width=True)
@@ -281,7 +281,6 @@ if st.session_state['deve_trocar_senha']:
 # ==========================================
 
 if os.path.exists("logo.png"):
-    # No menu lateral mantemos a largura total pois a coluna ja e fina por natureza
     st.sidebar.image("logo.png", use_container_width=True)
 else:
     st.sidebar.markdown("## PackFlow")
@@ -298,7 +297,7 @@ if st.sidebar.button("Encerrar Sessao"):
     st.session_state['deve_trocar_senha'] = False
     st.rerun()
 
-st.title("PackFlow - Gestão de Entregas")
+st.title("PackFlow - Gestão de Pacotes")
 
 abas_nomes = ["Cadastro de Encomendas", "Consultar Encomendas"]
 eh_supervisor = (st.session_state['role_usuario'] == 'supervisor')
